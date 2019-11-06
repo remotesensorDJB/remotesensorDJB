@@ -44,59 +44,125 @@ layout: default
 	<script src="voter_reg.js" type="text/javascript"></script>
 	
 	<!--The script below defines the Leaflet map-->
-	<script>
+	<script type="text/javascript">
 
-		//#3 Here we declare a variable called 'map' for the div tag above. Go ahead and set the initial location to Jefferson County, KY and the appropriate zoom level of your map here. Format: setView([lat, long], zoom)
-		var map = L.map('map').setView([37.84,-85.05], 7);
-	
-		//I have added a basemap from Mapbox for you. 
-		L.tileLayer('https://api.tiles.mapbox.com/v4/{id}/{z}/{x}/{y}.png?access_token=pk.eyJ1IjoibWFwYm94IiwiYSI6ImNpejY4NXVycTA2emYycXBndHRqcmZ3N3gifQ.rJcFIG214AriISLbB6B5aw', {
+	var map = L.map('map').setView([37.84,-85.65], 7);
 
-			maxZoom: 18,
-			attribution: 'Map data &copy; <a href="https://www.openstreetmap.org/">OpenStreetMap</a> contributors, ' +
-				'<a href="https://creativecommons.org/licenses/by-sa/2.0/">CC-BY-SA</a>, ' +
-				'Imagery © <a href="https://www.mapbox.com/">Mapbox</a>',
-			//#4 You could experiment with the basemap below. Try 'mapbox.streets' or 'mapbox.dark' for example. 
-			id: 'mapbox.light'
-		}).addTo(map);
-	
-		//#5 Add the function getColor below. You could use colorbrewer2.org to generate a set of hexidecimal codes that you prefer. The break values are based on Jenks Natural Breaks classification, which I have pulled from ArcMap. 
-		function getColor(v) {
+	L.tileLayer('https://api.tiles.mapbox.com/v4/{id}/{z}/{x}/{y}.png?access_token=pk.eyJ1IjoibWFwYm94IiwiYSI6ImNpejY4NXVycTA2emYycXBndHRqcmZ3N3gifQ.rJcFIG214AriISLbB6B5aw', {
+		maxZoom: 18,
+		attribution: 'Map data &copy; <a href="https://www.openstreetmap.org/">OpenStreetMap</a> contributors, ' +
+			'<a href="https://creativecommons.org/licenses/by-sa/2.0/">CC-BY-SA</a>, ' +
+			'Imagery © <a href="https://www.mapbox.com/">Mapbox</a>',
+		id: 'mapbox.light'
+	}).addTo(map);
+
+
+	// control that shows state info on hover
+	var info = L.control();
+
+	info.onAdd = function (map) {
+		this._div = L.DomUtil.create('div', 'info');
+		this.update();
+		return this._div;
+	};
+
+	info.update = function (props) {
+			this._div.innerHTML = '<h4>Voter Turnout</h4>' +  (props ?
+				'<b>' + props.NAME + ' County</b><br />' + props.turnout + '%'
+				: 'Hover over a county');
+	};
+
+	info.addTo(map);
+
+
+	// get color depending on turnout value
+	function getColor(v) {
 			return  v > 45 ? '#ae017e' :
 					v > 40 ? '#f768a1' :
 					v > 35 ? '#fbb4b9' :
 				             '#feebe2' ;
-		}
-	
-		//#6 Add the style function here. We set the fill color by calling the getColor function from above. You can set the line weight/transparency, dash pattern, and fill transparency by modifying the properties of the function. 
-		function style(feature) {
-			return {
-				fillColor: getColor(feature.properties.turnout),
-				weight: 1,
-				opacity: 1,
-				color: 'grey',
-				dashArray: '5',
-				fillOpacity: 0.5
-			};
+	}
+
+	function style(feature) {
+		return {
+			weight: 2,
+			opacity: 1,
+			color: 'white',
+			dashArray: '3',
+			fillOpacity: 0.7,
+			fillColor: getColor(feature.properties.turnout)
+		};
+	}
+
+	function highlightFeature(e) {
+		var layer = e.target;
+
+		layer.setStyle({
+			weight: 5,
+			color: '#666',
+			dashArray: '',
+			fillOpacity: 0.7
+		});
+
+		if (!L.Browser.ie && !L.Browser.opera && !L.Browser.edge) {
+			layer.bringToFront();
 		}
 
+		info.update(layer.feature.properties);
+	}
 
-	
-		//Here we are declaring the variable 'layer' which will contain the GeoJSON data loaded in the script above, and then configuring the layer style using our style function, and the on click response by binding layer pop-ups to the layer. 
-		var layer = L.geoJSON(voterData, {
-		
-		//#7 Add the style: style, property below to apply the layer style to the GeoJSON data
+	var geojson;
+
+	function resetHighlight(e) {
+		geojson.resetStyle(e.target);
+		info.update();
+	}
+
+	function zoomToFeature(e) {
+		map.fitBounds(e.target.getBounds());
+	}
+
+	function onEachFeature(feature, layer) {
+		layer.on({
+			mouseover: highlightFeature,
+			mouseout: resetHighlight,
+			click: zoomToFeature
+		});
+	}
+
+	geojson = L.geoJson(voterData, {
 		style: style,
-		
-		//#8 Add the onEachFeature code below to configure the pop ups. 
-		onEachFeature: function (feature, layer) {
-			layer.bindPopup('<h3>'+feature.properties.NAME+' County</h3><p>Voter Turnout: '+(feature.properties.turnout)+'%</p>');
-		}
-
+		onEachFeature: onEachFeature
 	}).addTo(map);
 
-	
-	</script>
+	map.attributionControl.addAttribution('Voter Turnout data &copy; <a href="https://results.enr.clarityelections.com/KY/97213/web/#/turnout">KY State Board of Elections</a>');
+
+
+	var legend = L.control({position: 'bottomright'});
+
+	legend.onAdd = function (map) {
+
+		var div = L.DomUtil.create('div', 'info legend'),
+			grades = [25, 35, 40, 45],
+			labels = [],
+			from, to;
+
+		for (var i = 0; i < grades.length; i++) {
+			from = grades[i];
+			to = grades[i + 1];
+
+			labels.push(
+				'<i style="background:' + getColor(from + 1) + '"></i> ' +
+				from + (to ? '&ndash;' + to : '+'));
+		}
+
+		div.innerHTML = labels.join('<br>');
+		return div;
+	};
+
+	legend.addTo(map);
+
+</script>
 	
 </body>
 
